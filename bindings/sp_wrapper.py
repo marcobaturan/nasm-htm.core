@@ -9,7 +9,6 @@ def align_array(arr, alignment=32):
     arr = np.ascontiguousarray(arr)
     if arr.ctypes.data % alignment == 0:
         return arr
-    # Allocate aligned memory buffer
     buf = np.empty(arr.size * arr.itemsize + alignment, dtype=np.uint8)
     offset = buf.ctypes.data % alignment
     shift = 0 if offset == 0 else (alignment - offset)
@@ -19,24 +18,49 @@ def align_array(arr, alignment=32):
 
 class SpatialPoolerNASM:
     """
-    Python wrapper for the nasm-htm.core Spatial Pooler engine written in NASM x86_64 AVX2 assembly.
-    Imitates the basic interface of htm.core SpatialPooler.
+    Complete Python Spatial Pooler Engine backed by NASM x86_64 AVX2 assembly core.
+    Provides:
+      - AVX2 SIMD PSHUFB Overlap calculation.
+      - Top-K Column Inhibition & Active Column SDR generation.
+      - AVX2 SIMD Hebbian Permanence Learning (`learn=True`).
     """
-    def __init__(self, input_dimensions, column_dimensions, potential_radius=1.0, syn_perm_connected=0.1):
+    def __init__(
+        self,
+        input_dimensions,
+        column_dimensions,
+        potential_radius=1.0,
+        syn_perm_connected=0.1,
+        syn_perm_active_inc=5,
+        syn_perm_inactive_dec=2,
+        stimulus_threshold=0,
+        num_active_columns_per_inh=0.02  # 2% target sparsity
+    ):
         self.input_dimensions = input_dimensions if isinstance(input_dimensions, (tuple, list)) else (input_dimensions,)
         self.column_dimensions = column_dimensions if isinstance(column_dimensions, (tuple, list)) else (column_dimensions,)
         
         self.num_inputs = int(np.prod(self.input_dimensions))
         self.num_columns = int(np.prod(self.column_dimensions))
         
-        # Calculate SDR bytes (bits packed into bytes, rounded up to multiple of 32 for AVX2 safety)
+        self.syn_perm_connected = int(syn_perm_connected * 255)
+        self.syn_perm_active_inc = int(syn_perm_active_inc)
+        self.syn_perm_inactive_dec = int(syn_perm_inactive_dec)
+        self.stimulus_threshold = stimulus_threshold
+
+        if isinstance(num_active_columns_per_inh, float) and num_active_columns_per_inh <= 1.0:
+            self.k_winners = max(1, int(self.num_columns * num_active_columns_per_inh))
+        else:
+            self.k_winners = int(num_active_columns_per_inh)
+
         raw_sdr_bytes = (self.num_inputs + 7) // 8
         self.sdr_bytes = ((raw_sdr_bytes + 31) // 32) * 32
-        
-        # Initialize synapse connection matrix (num_columns, sdr_bytes * 8 bits)
-        syn_mask_init = (np.random.rand(self.num_columns, self.sdr_bytes * 8) < syn_perm_connected).astype(np.uint8)
-        self.syn_mask = np.packbits(syn_mask_init, axis=1)
-        self.syn_mask = align_array(self.syn_mask, alignment=32)
+
+        # 1. Permanence Matrix [num_columns, num_inputs] (values 0..255)
+        # Random initial permanences around connected threshold
+        initial_perms = (np.random.rand(self.num_columns, self.num_inputs) * 0.2 * 255).astype(np.uint8)
+        self.syn_perms = align_array(initial_perms, alignment=32)
+
+        # 2. Derived Connected Synapse Mask Matrix [num_columns, sdr_bytes]
+        self._update_syn_mask()
 
         # Load shared C library
         lib_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "libspcore.so"))
@@ -44,6 +68,8 @@ class SpatialPoolerNASM:
             raise FileNotFoundError(f"Dynamic library not found at {lib_path}. Run 'make' in src/ directory.")
         
         self._lib = ctypes.CDLL(lib_path)
+        
+        # 1) calculate_overlap signature
         self._lib.calculate_overlap.argtypes = [
             ctypes.c_void_p, # input_sdr
             ctypes.c_void_p, # syn_mask
@@ -53,36 +79,59 @@ class SpatialPoolerNASM:
         ]
         self._lib.calculate_overlap.restype = None
 
-    def compute(self, input_array, learn=False, overlaps=None):
+        # 2) update_permanences signature
+        self._lib.update_permanences.argtypes = [
+            ctypes.c_void_p, # syn_perms
+            ctypes.c_void_p, # input_sdr
+            ctypes.c_void_p, # active_cols
+            ctypes.c_uint64, # num_active_cols
+            ctypes.c_uint64, # num_inputs
+            ctypes.c_uint8,  # perm_inc
+            ctypes.c_uint8   # perm_dec
+        ]
+        self._lib.update_permanences.restype = None
+
+    def _update_syn_mask(self):
+        """Generates packed connected synapse bitmask from permanence values."""
+        conn_bits = (self.syn_perms >= self.syn_perm_connected).astype(np.uint8)
+        # Pad to self.sdr_bytes * 8 bits
+        if conn_bits.shape[1] < self.sdr_bytes * 8:
+            padded = np.zeros((self.num_columns, self.sdr_bytes * 8), dtype=np.uint8)
+            padded[:, :conn_bits.shape[1]] = conn_bits
+            conn_bits = padded
+        self.syn_mask = align_array(np.packbits(conn_bits, axis=1), alignment=32)
+
+    def compute(self, input_array, learn=False, active_array=None):
         """
-        Computes overlaps for input SDR array.
-        
+        Executes full Spatial Pooler compute cycle:
+          1. Overlap calculation (AVX2 NASM engine)
+          2. Top-K Column Inhibition & Winner Selection
+          3. Hebbian Permanence Learning (if learn=True via AVX2 NASM engine)
+          
         Parameters:
-            input_array: 1D NumPy array (0s and 1s of size num_inputs, or pre-packed uint8 bytes).
-            learn: Boolean (reserved for future learning updates).
-            overlaps: Optional uint32 NumPy array of size num_columns to receive results.
+            input_array: 1D NumPy uint8 array of input SDR bits (0 or 1).
+            learn: Boolean flag enabling Hebbian learning update.
+            active_array: Optional uint8 NumPy array to store active column output SDR.
             
         Returns:
-            overlaps: 1D uint32 NumPy array containing active synapse counts per column.
+            active_array: 1D uint8 NumPy array (size num_columns) representing winning columns SDR.
         """
         if input_array.dtype != np.uint8:
             input_array = input_array.astype(np.uint8)
-            
-        if input_array.size == self.num_inputs:
-            packed_input = np.packbits(input_array)
-            if packed_input.size < self.sdr_bytes:
-                padded = np.zeros(self.sdr_bytes, dtype=np.uint8)
-                padded[:packed_input.size] = packed_input
-                packed_input = padded
-        elif input_array.size == self.sdr_bytes:
-            packed_input = input_array
-        else:
-            raise ValueError(f"Input array size {input_array.size} mismatch with num_inputs {self.num_inputs} or sdr_bytes {self.sdr_bytes}")
 
+        if input_array.size != self.num_inputs:
+            raise ValueError(f"Input array size {input_array.size} mismatch with num_inputs {self.num_inputs}")
+
+        # Pack input for SIMD overlap engine
+        packed_input = np.packbits(input_array)
+        if packed_input.size < self.sdr_bytes:
+            padded = np.zeros(self.sdr_bytes, dtype=np.uint8)
+            padded[:packed_input.size] = packed_input
+            packed_input = padded
         packed_input = align_array(packed_input, alignment=32)
-        
-        if overlaps is None or overlaps.size != self.num_columns:
-            overlaps = np.zeros(self.num_columns, dtype=np.uint32)
+
+        # 1. STEP 1: Overlap calculation (NASM AVX2 engine)
+        overlaps = np.zeros(self.num_columns, dtype=np.uint32)
         overlaps = align_array(overlaps, alignment=32)
 
         self._lib.calculate_overlap(
@@ -93,4 +142,41 @@ class SpatialPoolerNASM:
             ctypes.c_uint64(self.sdr_bytes)
         )
 
-        return overlaps
+        # 2. STEP 2: Top-K Column Inhibition
+        if self.stimulus_threshold > 0:
+            overlaps[overlaps < self.stimulus_threshold] = 0
+
+        # Sort top-k winning column indices
+        if self.k_winners < self.num_columns:
+            active_col_indices = np.argpartition(overlaps, -self.k_winners)[-self.k_winners:]
+            # Filter non-zero overlaps
+            active_col_indices = active_col_indices[overlaps[active_col_indices] > 0]
+        else:
+            active_col_indices = np.where(overlaps > 0)[0]
+
+        active_col_indices = align_array(active_col_indices.astype(np.uint32), alignment=32)
+
+        # Build output active column SDR
+        if active_array is None or active_array.size != self.num_columns:
+            active_array = np.zeros(self.num_columns, dtype=np.uint8)
+        else:
+            active_array.fill(0)
+
+        active_array[active_col_indices] = 1
+
+        # 3. STEP 3: Hebbian Learning Update (if learn=True, NASM AVX2 engine)
+        if learn and active_col_indices.size > 0:
+            dense_input = align_array(input_array, alignment=32)
+            self._lib.update_permanences(
+                self.syn_perms.ctypes.data,
+                dense_input.ctypes.data,
+                active_col_indices.ctypes.data,
+                ctypes.c_uint64(active_col_indices.size),
+                ctypes.c_uint64(self.num_inputs),
+                ctypes.c_uint8(self.syn_perm_active_inc),
+                ctypes.c_uint8(self.syn_perm_inactive_dec)
+            )
+            # Refresh connected synapse mask for next cycle
+            self._update_syn_mask()
+
+        return active_array
