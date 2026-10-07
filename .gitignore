@@ -1,24 +1,37 @@
-# Python
+# Python Virtual Environments & Packages
+venv/
+.venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Python Bytecode & Caches
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
-.venv/
-venv/
-ENV/
+*.pyd
 
-# C / Assembly Build Artifacts
+# C / C++ & Assembly Compiled Binaries / Shared Libraries
+*.so
+*.dylib
+*.dll
 *.o
-*.so
-src/libspcore.so
-src/sp_core.o
+*.a
+*.out
+src/*.so
+src/*.o
+build/
+dist/
 
-# IDEs & Editors
+# IDEs & Editor Files
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# OS
+# System Files
 .DS_Store
 Thumbs.db
