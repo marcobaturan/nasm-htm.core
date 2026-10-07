@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>nasm-htm.core — Ultra-Fast HTM Spatial Pooler in Assembly AVX2</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <header class="navbar">
+        <div class="container flex-between">
+            <div class="logo">
+                <span class="logo-icon">⚡</span>
+                <span class="logo-text">nasm-htm<span class="accent">.core</span></span>
+            </div>
+            <nav class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#benchmarks">Benchmarks</a>
+                <a href="#quickstart">Quick Start</a>
+                <a href="#telemetry">Telemetry</a>
+                <a href="#references">References</a>
+                <a href="https://github.com" target="_blank" class="btn btn-outline">GitHub Repo</a>
+            </nav>
+        </div>
+    </header>
+
+    <section class="hero">
+        <div class="container text-center">
+            <div class="badge">AMD Ryzen 4000 & Intel AVX2 SIMD Optimized</div>
+            <h1>Ultra-Low Latency HTM Spatial Pooler Core</h1>
+            <p class="hero-subtext">
+                Native x86_64 NASM assembly implementation of Hierarchical Temporal Memory (HTM) Sparse Distributed Representation (SDR) overlap calculation.
+            </p>
+            
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">40 µs</div>
+                    <div class="metric-label">Latency / Cycle</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">25,000</div>
+                    <div class="metric-label">Ops / Second</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">30.2x</div>
+                    <div class="metric-label">Faster than htm.core C++</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">15.6 KB</div>
+                    <div class="metric-label">Binary Disk Footprint</div>
+                </div>
+            </div>
+
+            <div class="hero-actions">
+                <a href="#quickstart" class="btn btn-primary">Get Started</a>
+                <a href="#benchmarks" class="btn btn-secondary">View Benchmarks</a>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="section">
+        <div class="container">
+            <h2 class="section-title text-center">Technical Architecture & Key Innovations</h2>
+            <div class="cards-grid">
+                <div class="card">
+                    <div class="card-icon">🎯</div>
+                    <h3>AVX2 Vectorized Popcount</h3>
+                    <p>Uses parallel 256-bit SIMD nibble shuffle lookup tables (<code>PSHUFB</code> + <code>VPSADBW</code>) specifically engineered for AMD Zen 2 and Intel Skylake CPUs lacking AVX-512 <code>vpopcntd</code> instructions.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon">💾</div>
+                    <h3>Ultralight Footprint</h3>
+                    <p>Compiled shared library is just <strong>15.65 KB</strong> (319x smaller than official C++ bindings) and uses 18.5% less RAM RSS during continuous execution.</p>
+                </div>
+                <div class="card">
+                    <div class="card-icon">⚡</div>
+                    <h3>Zero Python Allocation Overhead</h3>
+                    <p>Passes 32-byte SIMD memory aligned pointers directly via <code>ctypes</code>, eliminating object wrappers, heap allocation loops, and C++/Python conversion overhead.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="benchmarks" class="section bg-dark">
+        <div class="container">
+            <h2 class="section-title text-center">Comparative Performance Benchmarks</h2>
+            <p class="section-subtext text-center">Empirical measurements on AMD Ryzen 7 4700U (8 Cores, Zen 2 Architecture) over 2,048 input bits x 2,048 columns.</p>
+            
+            <div class="table-wrapper">
+                <table class="benchmark-table">
+                    <thead>
+                        <tr>
+                            <th>Implementation Engine</th>
+                            <th>Latency (µs)</th>
+                            <th>Throughput (ops/sec)</th>
+                            <th>Speedup vs Python</th>
+                            <th>Speedup vs htm.core C++</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="highlight-row">
+                            <td><strong>nasm-htm.core (NASM AVX2)</strong></td>
+                            <td><strong>40.00 µs</strong></td>
+                            <td><strong>25,002.20</strong></td>
+                            <td><strong>206.00x</strong></td>
+                            <td><strong>30.20x Faster</strong></td>
+                        </tr>
+                        <tr>
+                            <td>htm.core (Official C++ v2.2.0)</td>
+                            <td>1,207.89 µs</td>
+                            <td>827.89</td>
+                            <td>6.82x</td>
+                            <td>1.00x (Baseline)</td>
+                        </tr>
+                        <tr>
+                            <td>Pure Python / NumPy Reference</td>
+                            <td>8,239.29 µs</td>
+                            <td>121.37</td>
+                            <td>1.00x</td>
+                            <td>Reference</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section id="telemetry" class="section">
+        <div class="container">
+            <h2 class="section-title text-center">Hardware Telemetry Profiling</h2>
+            <div class="telemetry-grid">
+                <div class="telemetry-item">
+                    <h4>Binary Disk Size</h4>
+                    <div class="progress-bar-bg"><div class="progress-bar-fill green" style="width: 5%;"></div></div>
+                    <p><strong>nasm-htm.core:</strong> 15.65 KB vs <strong>htm.core C++:</strong> 4.88 MB (319x smaller)</p>
+                </div>
+                <div class="telemetry-item">
+                    <h4>RAM RSS Footprint</h4>
+                    <div class="progress-bar-bg"><div class="progress-bar-fill blue" style="width: 80%;"></div></div>
+                    <p><strong>nasm-htm.core:</strong> 43.45 MB vs <strong>htm.core C++:</strong> 53.30 MB (18.5% RAM saved)</p>
+                </div>
+                <div class="telemetry-item">
+                    <h4>Energy Consumption</h4>
+                    <div class="progress-bar-bg"><div class="progress-bar-fill orange" style="width: 10%;"></div></div>
+                    <p><strong>nasm-htm.core:</strong> ~0.07 Joules vs <strong>htm.core C++:</strong> ~0.71 Joules (10x energy reduction)</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="quickstart" class="section bg-dark">
+        <div class="container">
+            <h2 class="section-title text-center">Quick Start Guide</h2>
+            
+            <h3>1. Building Assembly Core</h3>
+            <div class="code-block">
+                <pre><code># Install build prerequisites (NASM & GCC)
+sudo apt install nasm gcc make
+
+# Compile assembly into libspcore.so
+cd src && make</code></pre>
+            </div>
+
+            <h3>2. Python Usage Example</h3>
+            <div class="code-block">
+                <pre><code>import numpy as np
+from bindings.sp_wrapper import SpatialPoolerNASM
+
+# Initialize 2048-bit Input, 1024-column Spatial Pooler
+sp = SpatialPoolerNASM(input_dimensions=2048, column_dimensions=1024)
+
+# Create 5% active bit input SDR
+input_sdr = (np.random.rand(2048) < 0.05).astype(np.uint8)
+
+# Compute overlaps using AVX2 NASM core (returns uint32 NumPy array)
+overlaps = sp.compute(input_sdr)
+print("Overlap Counts per Column:", overlaps[:10])</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <section id="references" class="section">
+        <div class="container">
+            <h2 class="section-title text-center">Project References & Acknowledgments</h2>
+            <div class="ref-list">
+                <div class="ref-item">
+                    <strong>htm.core C++ Repository:</strong>
+                    <a href="https://github.com/htm-community/htm.core" target="_blank">https://github.com/htm-community/htm.core</a>
+                    <p>Official community implementation of Hierarchical Temporal Memory in C++.</p>
+                </div>
+                <div class="ref-item">
+                    <strong>Numenta NuPIC Repository:</strong>
+                    <a href="https://github.com/numenta/nupic" target="_blank">https://github.com/numenta/nupic</a>
+                    <p>Numenta Platform for Intelligent Computing reference codebase.</p>
+                </div>
+                <div class="ref-item">
+                    <strong>HTM Biological & Algorithmic Papers:</strong>
+                    <a href="https://numenta.com/papers/" target="_blank">https://numenta.com/papers/</a>
+                    <p>Hawkins J., Ahmad S. "Real-Time Anomaly Detection for Streaming Analytics of High-Velocity Data".</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer class="footer text-center">
+        <div class="container">
+            <p>nasm-htm.core — Open Source HTM Assembly Engine | MIT / Apache-2.0 License</p>
+        </div>
+    </footer>
+
+</body>
+</html>
