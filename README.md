@@ -58,7 +58,7 @@
 sudo apt update && sudo apt install -y nasm gcc make python3 python3-pip python3-venv
 
 # 2. Build Assembly Core
-git clone https://github.com/YOUR_USERNAME/nasm-htm.core.git
+git clone https://github.com/marcobaturan/nasm-htm.core.git
 cd nasm-htm.core
 make -C src clean all
 
